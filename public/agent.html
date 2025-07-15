@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Agent</title>
+</head>
+<body>
+  <h2>AI Agent Auto Answer</h2>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const peer = new RTCPeerConnection();
+    const agentId = "ai-agent";
+    let remoteStream;
+
+    socket.emit("register", agentId);
+
+    peer.onicecandidate = e => {
+      if (e.candidate) {
+        socket.emit("send-ice-candidate", {
+          to: "caller",
+          candidate: e.candidate
+        });
+      }
+    };
+
+    peer.ontrack = event => {
+      console.log("✅ ontrack triggered - receiving remote audio");
+      remoteStream = event.streams[0];
+
+      if (remoteStream) {
+        console.log("✅ Remote stream tracks:", remoteStream.getTracks());
+
+        // Playback to confirm audio is received
+        const audioPlayer = document.createElement('audio');
+        audioPlayer.srcObject = remoteStream;
+        audioPlayer.autoplay = true;
+        audioPlayer.controls = true;
+        document.body.appendChild(audioPlayer);
+
+        startRecording(remoteStream);
+      } else {
+        console.warn("⚠️ No remote stream received");
+      }
+    };
+
+    socket.on("call-made", async data => {
+      console.log("📞 Incoming call offer received");
+      await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      socket.emit("make-answer", { answer: answer, to: "caller" });
+      console.log("✅ Answer sent");
+    });
+
+    socket.on("ice-candidate", ({ candidate }) => {
+      peer.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log("🌐 ICE candidate added");
+    });
+
+    function startRecording(stream) {
+  const options = { mimeType: 'audio/webm' };
+  if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+    console.warn("⚠️ webm/opus not supported. Trying default.");
+    delete options.mimeType;
+  }
+
+  const recorder = new MediaRecorder(stream, options);
+  const chunks = [];
+
+  recorder.ondataavailable = e => {
+    console.log("📦 Received chunk:", e.data.size);
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  recorder.onstop = () => {
+    console.log("🛑 Recording stopped");
+
+    const blob = new Blob(chunks, { type: 'audio/webm' });
+    if (blob.size === 0) {
+      console.error("❌ Blob is empty – no audio recorded");
+      alert("Recording is empty. Check caller mic permissions.");
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const audio = document.createElement('audio');
+    audio.src = url;
+    audio.controls = true;
+    document.body.appendChild(audio);
+    audio.play();
+  };
+
+  console.log("🔴 Starting recording for 10s...");
+  recorder.start(1000); // 1 second intervals
+  setTimeout(() => recorder.stop(), 10000);
+}
+
+  </script>
+</body>
+</html>

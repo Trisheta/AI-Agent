@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Caller Interface</title>
+    <style>
+      body {
+        font-family: "Segoe UI", sans-serif;
+        background: #f5f7fa;
+        text-align: center;
+        padding: 50px;
+      }
+      button {
+        background-color: #3498db;
+        color: white;
+        padding: 12px 24px;
+        margin: 10px;
+        font-size: 16px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #2980b9;
+      }
+      #timer {
+        margin-top: 20px;
+        font-size: 20px;
+        color: #e74c3c;
+        font-weight: bold;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 18px;
+        color: #2c3e50;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>🎙️ Caller Interface</h2>
+    <button onclick="startRecording()">Start Recording</button>
+    <button onclick="stopRecording()">Stop Recording</button>
+    <div id="timer">⏱️ 00:00</div>
+    <div id="status">Idle</div>
+
+    <script>
+      let mediaRecorder;
+      let audioChunks = [];
+      let timerInterval;
+      let recordingDuration = 0;
+      let autoStopTimeout;
+
+      async function startRecording() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+
+          mediaRecorder = new MediaRecorder(stream);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            audioChunks.push(event.data);
+          };
+
+          mediaRecorder.onstop = async () => {
+            const blob = new Blob(audioChunks, { type: "audio/wav" });
+            const formData = new FormData();
+            formData.append("audio", blob, "recording.wav");
+
+            document.getElementById("status").textContent = "Uploading...";
+
+            try {
+              const response = await fetch("http://localhost:3000/upload", {
+                method: "POST",
+                body: formData,
+              });
+
+              const result = await response.json();
+              document.getElementById("status").textContent = result.message;
+            } catch (error) {
+              console.error("Upload failed:", error);
+              document.getElementById("status").textContent = "Upload failed.";
+            }
+          };
+
+          mediaRecorder.start();
+          document.getElementById("status").textContent = "Recording...";
+
+          startTimer();
+
+          autoStopTimeout = setTimeout(() => {
+            console.log("⏳ Auto-stopping after 5 mins");
+            stopRecording();
+          }, 5 * 60 * 1000); // 5 minutes
+        } catch (error) {
+          console.error("Mic access error:", error);
+          document.getElementById("status").textContent =
+            "Microphone access denied.";
+        }
+      }
+
+      function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+          document.getElementById("status").textContent = "Processing...";
+          stopTimer();
+          clearTimeout(autoStopTimeout);
+        }
+      }
+
+      function startTimer() {
+        recordingDuration = 0;
+        updateTimerDisplay();
+        timerInterval = setInterval(() => {
+          recordingDuration++;
+          updateTimerDisplay();
+        }, 1000);
+      }
+
+      function stopTimer() {
+        clearInterval(timerInterval);
+        updateTimerDisplay();
+      }
+
+      function updateTimerDisplay() {
+        const minutes = String(Math.floor(recordingDuration / 60)).padStart(
+          2,
+          "0"
+        );
+        const seconds = String(recordingDuration % 60).padStart(2, "0");
+        document.getElementById("timer").innerText = `⏱️ ${minutes}:${seconds}`;
+      }
+    </script>
+  </body>
+</html>
